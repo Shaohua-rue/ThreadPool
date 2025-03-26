@@ -27,11 +27,15 @@ private:
 int main()
 {
     ThreadPool pool;
+    pool.setMode();
     pool.start(4);
 
     Result res1 = pool.submitTask(std::make_shared<MyTask>(1,10000));
     Result res2 = pool.submitTask(std::make_shared<MyTask>(10001,20000)); 
     Result res3 = pool.submitTask(std::make_shared<MyTask>(20001,30000));
+    pool.submitTask(std::make_shared<MyTask>(20001,30000));
+    pool.submitTask(std::make_shared<MyTask>(20001,30000));
+    pool.submitTask(std::make_shared<MyTask>(20001,30000));
 
     uLong sum1 = res1.get().cast_<uLong>();
     uLong sum2 = res2.get().cast_<uLong>();
@@ -44,5 +48,6 @@ int main()
         sum += i;
     }
     std::cout << sum << std::endl;
+    getchar();
     
 }
