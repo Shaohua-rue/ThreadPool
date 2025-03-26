@@ -31,7 +31,7 @@ void ThreadPool::threadFunc()
             //先获取锁
             std::unique_lock<std::mutex> lock(taskQueMtx_);
             //等待notEmpty条件变量，如果有任务，就执行任务，没有任务就阻塞等待
-            std::cout<<"tid:"<<std::this_thread::get_id()<<"尝试获取任务..."<<std::endl;
+            //std::cout<<"tid:"<<std::this_thread::get_id()<<"尝试获取任务..."<<std::endl;
             notEmpty_.wait(lock,[&](){
                 return !taskQue_.empty();
             });
@@ -39,7 +39,7 @@ void ThreadPool::threadFunc()
             task = taskQue_.front();
             taskQue_.pop();
             taskSize_--;
-         std::cout<<"tid:"<<std::this_thread::get_id()<<"获取到任务..."<<std::endl;
+         //std::cout<<"tid:"<<std::this_thread::get_id()<<"获取到任务..."<<std::endl;
             //如果依然有剩余任务，继续通知其他线程执行任务
             if(!taskQue_.empty())
             {
@@ -53,13 +53,13 @@ void ThreadPool::threadFunc()
         //当前线程负责执行这个函数
         if(task != nullptr)
         {
-            task->run();  
+            task->exec();  
         }
           
     }
 }
 //给线程池提交任务 用户调用改接口，传入任务对象，生产任务
-void ThreadPool::submitTask(std::shared_ptr<Task> sp)
+Result ThreadPool::submitTask(std::shared_ptr<Task> sp)
 {
     //获取锁
     std::unique_lock<std::mutex> lock(taskQueMtx_);
@@ -77,7 +77,7 @@ void ThreadPool::submitTask(std::shared_ptr<Task> sp)
     {
         //表示notFull_超时了,条件依然没有满足，返回false
         std::cerr<<"task queue is full, submit task fail."<<std::endl;
-        return;
+        return Result(sp,false);
     }
 
 
@@ -87,5 +87,48 @@ void ThreadPool::submitTask(std::shared_ptr<Task> sp)
     //因为新放置任务，任务队列不空，notEmpty条件变量通知线程池中的线程，有任务了  
     notEmpty_.notify_all();   
 
+    //返回任务的Result对象
+    return Result(sp);
+}
 
+/////////////////  Task相关成员函数
+Task::Task()
+	: result_(nullptr)
+{}
+
+void Task::exec()
+{
+	if (result_ != nullptr)
+	{
+		result_->setVal(run()); // 执行run
+	}
+}
+
+void Task::setResult(Result* res)
+{
+	result_ = res;
+}
+
+/////////////////   Result构造函数
+Result::Result(std::shared_ptr<Task> task, bool isValid)
+	: isValid_(isValid)
+	, task_(task)
+{
+	task_->setResult(this);
+}
+
+Any Result::get() // 用户获得任务结果，返回any类型
+{
+	if (!isValid_)
+	{
+		return "";
+	}
+	sem_.wait(); //等待线程task执行完毕，获得任务结果
+	return std::move(any_); 
+}
+
+void Result::setVal(Any any)  // 设置任务结果
+{
+	this->any_ = std::move(any);
+	sem_.post(); // 通知线程task执行完毕，可以获得任务结果
 }

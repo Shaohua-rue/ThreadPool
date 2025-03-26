@@ -10,13 +10,122 @@
 #include <iostream>
 
 const size_t TASK_MAX_THRESHOLD = 1024;
+//Any 类型：可以接收任意数据类型
+class Any 
+{
+public:
+	Any() = default;
+	~Any() = default;
+	Any(const Any&) = delete;
+	Any& operator=(const Any&) = delete;
+	Any(Any&&) = default;
+	Any& operator=(Any&&) = default;
 
-//任务抽象基类
+    //这个构造函数，可以接收任意数据类型
+    template<typename T>
+    Any(T data):base_(std::make_unique<Derive<T>>(data)){}
+
+    //将Any对象里面存储的data数据提取出来
+    template<typename T>
+    T  cast_()
+    {
+        //从基类base_找到它所指向的Derive<T>对象，从它里面取出data成员变量
+        Derive<T>* p = dynamic_cast<Derive<T>*>(base_.get());
+        if (p == nullptr)
+        {
+            throw std::logic_error("type is unmatch");
+            
+        }
+        return p->data_;
+    }
+private:
+    //基类类型
+    class Base
+    {
+        public:
+            virtual ~Base(){}
+    };
+    //派生类类型
+    template<typename T>
+    class Derive:public Base
+    {
+        public:
+           Derive(T data):data_(data){}
+           T data_;
+    };
+private:
+    //定义一个基类的指针
+    std::unique_ptr<Base> base_;
+};
+
+//实现一个信号量
+class Semaphore
+{
+public:
+    Semaphore(int limit = 0):resLimit_(limit){}
+    ~Semaphore(){}
+
+    //获取一个信号量资源
+    void wait()
+    {
+        std::unique_lock<std::mutex> lock(mtx_);
+        //等待信号量有资源，没有资源的话，会阻塞这个资源
+        cond_.wait(lock,[&](){
+            return resLimit_ > 0;
+        });
+
+        resLimit_--;
+    }
+
+    //增加一个信号量资源
+    void post()
+    {
+        std::unique_lock<std::mutex> lock(mtx_);
+        resLimit_++;
+        cond_.notify_all();
+    }
+
+private:
+    int resLimit_;
+    std::mutex mtx_;
+    std::condition_variable cond_;
+};
+
+// Task的前置声明
+class Task;
+
+// ʵ定义返回值类
+class Result
+{
+public:
+	Result(std::shared_ptr<Task> task, bool isValid = true);
+	~Result() = default;
+
+	// 线程设置返回值
+	void setVal(Any any);
+
+	// 客户获得线程返回值
+	Any get();
+private:
+	Any any_; // Any类接收
+	Semaphore sem_; // 信号量接受
+	std::shared_ptr<Task> task_; //ָ线程任务绑定 
+	std::atomic_bool isValid_; // 返回值是否有效
+};
+
 class Task
 {
 public:
-    //用户可以自定义任意任务类型，从Task继承，重写run方法，实现自定义任务处理
-    virtual void run() = 0;
+	Task();
+	~Task() = default;
+	void exec();
+	void setResult(Result* res);
+
+	//纯虚函数，子类继承必须实现run()函数
+	virtual Any run() = 0;
+
+private:
+	Result* result_; //任务返回值
 };
 //线程池支持模式
 enum  class PoolMode
@@ -82,7 +191,7 @@ public:
     void setTaskQueMaxThreshold(size_t threshhold){ taskQueMaxThreshold_ = threshhold; }
 
     //给线程池提交任务
-    void submitTask(std::shared_ptr<Task> sp);
+    Result submitTask(std::shared_ptr<Task> sp);
 
 private:
     void threadFunc();
