@@ -1,34 +1,30 @@
 #pragma once
-#include <functional>
 #include <thread>
+#include <functional>
 class Thread
 {
 public:
+    //声明线程函数
     using ThreadFunc = std::function<void(int)>;
 
-    //线程构造
-    Thread(ThreadFunc func):
-    func_(func),
-    threadId_(generateId_++)
-    {}
-    //线程析构
+    //线程构造与析构
+    Thread(ThreadFunc func):func_(func),threadId_(generateId_++){}
     ~Thread(){}
+    Thread(const Thread&) = delete;
+    Thread& operator=(const Thread&) = delete;
 
-    //启动线程
-    void start(){
-        //创建一个线程来执行一个线程函数
-        std::thread t(func_,threadId_);   
-        t.detach(); //设置分离线程
+    //线程启动
+    void start()
+    {
+        std::thread t(func_,threadId_);
+        t.detach();
     }
 
-    //获取线程id
-    int getId(){
-        return threadId_;
-    }
+    //获取线程ID
+    int getId()const{return threadId_;}
 
 private:
-    ThreadFunc func_;
-    static int generateId_;
-    int threadId_;  //线程id
-   
+    ThreadFunc func_;   //线程函数
+    int threadId_;      //线程id
+    static int generateId_; //线程id生成器
 };

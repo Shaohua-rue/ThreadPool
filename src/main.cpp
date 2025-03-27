@@ -1,53 +1,96 @@
+// 线程池项目-最终版.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
+//
+
 #include <iostream>
+#include <functional>
+#include <thread>
+#include <future>
+#include <chrono>
+using namespace std;
+
 #include "threadPool.h"
 
-#include <thread>
-#include <chrono>
 
-using uLong = unsigned long long;
-class MyTask :public Task {
-public:
-    MyTask(int begin,int end):begin_(begin),end_(end)
-    {
-        //std::cout << "MyTask " << std::this_thread::get_id() << " is created" << std::endl;
-    }
-    Any run()
-    {
-        uLong sum = 0;
-        for(uLong i = begin_;i <= end_;++i)
-        {
-            sum += i;
-        }
-        return sum;
-    }
-private:
-    int begin_;
-    int end_;
-};
+/*
+如何能让线程池提交任务更加方便
+1. pool.submitTask(sum1, 10, 20);
+   pool.submitTask(sum2, 1 ,2, 3);
+   submitTask:可变参模板编程
+
+2. 我们自己造了一个Result以及相关的类型，代码挺多
+    C++11 线程库   thread   packaged_task(function函数对象)  async 
+   使用future来代替Result节省线程池代码
+*/
+
+int sum1(int a, int b)
+{
+    this_thread::sleep_for(chrono::seconds(3));
+    // 比较耗时
+    return a + b;
+}
+int sum2(int a, int b, int c)
+{
+    this_thread::sleep_for(chrono::seconds(2));
+    return a + b + c;
+}
+// io线程 
+void io_thread(int listenfd)
+{
+
+}
+// worker线程
+void worker_thread(int clientfd)
+{
+
+}
 int main()
 {
     ThreadPool pool;
-    pool.setMode();
-    pool.start(4);
+    pool.setMode(PoolMode::MODE_CACHED);
+    pool.start(8);
 
-    Result res1 = pool.submitTask(std::make_shared<MyTask>(1,10000));
-    Result res2 = pool.submitTask(std::make_shared<MyTask>(10001,20000)); 
-    Result res3 = pool.submitTask(std::make_shared<MyTask>(20001,30000));
-    pool.submitTask(std::make_shared<MyTask>(20001,30000));
-    pool.submitTask(std::make_shared<MyTask>(20001,30000));
-    pool.submitTask(std::make_shared<MyTask>(20001,30000));
+    future<int> r1 = pool.submitTask(sum1, 1, 2);
+    future<int> r2 = pool.submitTask(sum2, 1, 2, 3);
+    future<int> r3 = pool.submitTask([](int b, int e)->int {
+        int sum = 0;
+        for (int i = b; i <= e; i++)
+            sum += i;
+        return sum;
+        }, 1, 100);
+    future<int> r4 = pool.submitTask([](int b, int e)->int {
+        int sum = 0;
+        for (int i = b; i <= e; i++)
+            sum += i;
+        return sum;
+        }, 1, 100);
+    future<int> r5 = pool.submitTask([](int b, int e)->int {
+        int sum = 0;
+        for (int i = b; i <= e; i++)
+            sum += i;
+        return sum;
+        }, 1, 100);
+    //future<int> r4 = pool.submitTask(sum1, 1, 2);
 
-    uLong sum1 = res1.get().cast_<uLong>();
-    uLong sum2 = res2.get().cast_<uLong>();
-    uLong sum3 = res3.get().cast_<uLong>();
+    cout << r1.get() << endl;
+    cout << r2.get() << endl;
+    cout << r3.get() << endl;
+    cout << r4.get() << endl;
+    cout << r5.get() << endl;
 
-    std::cout << sum1 + sum2 + sum3 << std::endl;
-    uLong sum = 0;
-    for(int i = 1;i < 30001;++i)
-    {
-        sum += i;
-    }
-    std::cout << sum << std::endl;
     getchar();
-    
+
+    //packaged_task<int(int, int)> task(sum1);
+    //// future <=> Result
+    //future<int> res = task.get_future();
+    //// task(10, 20);
+    //thread t(std::move(task), 10, 20);
+    //t.detach();
+
+    //cout << res.get() << endl;
+
+    /*thread t1(sum1, 10, 20);
+    thread t2(sum2, 1, 2, 3);
+
+    t1.join();
+    t2.join();*/
 }

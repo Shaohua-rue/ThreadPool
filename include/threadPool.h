@@ -1,91 +1,100 @@
 #pragma once
-#include <vector>
-#include <queue>
-#include <atomic>
-
-#include <functional>
 #include <iostream>
+#include <mutex>
+#include <condition_variable>
+#include <functional>
 #include <unordered_map>
-#include "any.h"
-#include "semaphore.h"
+#include <future>
+#include <queue>
+#include <memory>
+#include <atomic>
+#include <chrono>
+
 #include "thread.h"
-#include "task.h"
 
-/*
-example:
-TreadPool pool;
-pool.start(4);
-class MyTask:public Task
-{
-public:
-    void run()
-    {
-    //线程代码
-    }
+
+
+//定义线程池模式
+enum class PoolMode{
+    MODE_CACHED,
+    MODE_FIXED
 };
-pool.submitTask(std::make_shared<MyTask>());
-*/
-
-//线程池支持模式
-enum  class PoolMode
-{
-    MODE_FIXED, //固定大小
-    MODE_CACHED //动态增长
-};
-
 
 class ThreadPool
 {
 public:
-    //构造函数
+    //线程池构造与析构相关
     ThreadPool();
-    //析构函数
     ~ThreadPool();
-
     ThreadPool(const ThreadPool&) = delete;
-    ThreadPool& operator=(const ThreadPool&) = delete;
+    ThreadPool& operator = (const ThreadPool&) = delete;
 
-    //开启线程池
-    void start(int initThreadSize = 4);
+    //线程池启动函数
+    void start(int initThreadSize = std::thread::hardware_concurrency());
 
-    //设置线程池模式
-    void setMode(PoolMode mode = PoolMode::MODE_FIXED){
-        if(checkPoolStatus())
-            return;
-        poolMode_ = mode; }
+    void setMode(PoolMode mode){ poolMode_ = mode;}
+    template<typename Func, typename... Args>
+	auto submitTask(Func&& func, Args&&... args) -> std::future<decltype(func(args...))>;
 
 
-    //设置task任务队列上限阈值
-    void setTaskQueMaxThreshold(size_t threshhold){ taskQueMaxThreshold_ = threshhold; }
-
-    //给线程池提交任务
-    Result submitTask(std::shared_ptr<Task> sp);
-
+    bool cheakPoolRunningState()const{return isPoolRunning_;}
 private:
+    //线程函数
     void threadFunc(int threadId);
-
-    //检查pool工作状态
-    bool checkPoolStatus()const{return isPoolRunning_;}
 private:
-    //std::vector<std::unique_ptr<Thread>> threads_; //线程列表
-    std::unordered_map<int,std::unique_ptr<Thread>> threads_;
     int initThreadSize_; //初始化线程数量
-    std::atomic_int curThreadSize_; //当前线程数量
+    int threadSizeThreshHold_;  //线程数量上限
+    std::atomic_int idleThreadSize_;    //空闲线程数量
+    std::unordered_map<int, std::unique_ptr<Thread>> threads_;    //线程容器
 
-    std::queue<std::shared_ptr<Task>> taskQue_; //任务队列
-    std::atomic_int taskSize_; //任务数量
-    size_t taskQueMaxThreshold_; //任务队列阈值 
+    using Task = std::function<void()>;
+    std::queue<Task> taskQue_;  //任务队列
+    int taskQueMaxThreshHode_;  //任务队列上限
 
-    std::mutex  taskQueMtx_;    //任务队列互斥锁
-    std::condition_variable notFull_;   //任务队列非满条件变量
-    std::condition_variable notEmpty_;  //任务队列非空条件变量
-    std::condition_variable exitCond_;  //等待线程资源全部回收
+    std::mutex taskQueMtx_; //任务队列互斥锁
+    std::condition_variable notFull_;   //任务队列非空
+    std::condition_variable notEmpty_;  //任务队列非满
+    std::condition_variable exitCond_;  //线程池退出
+
 
     PoolMode poolMode_; //线程池模式
-
-    
-    std::atomic_bool isPoolRunning_;//表示线程池工作状态
-
-    std::atomic_int idleThreadSize_;    //空闲线程的数量
+    std::atomic_bool isPoolRunning_;    //线程池是否运行
 
 };
+
+//模版函数的声明与实现必须都在头文件中
+template<typename Func, typename... Args>
+auto ThreadPool::submitTask(Func&& func, Args&&... args) -> std::future<decltype(func(args...))>
+{
+    using RType = decltype(func(args...));
+    auto task = std::make_shared<std::packaged_task<RType()>>(std::bind(std::forward<Func>(func), std::forward<Args>(args)...));
+	std::future<RType> result = task->get_future();
+
+    std::unique_lock<std::mutex> lock(taskQueMtx_);
+
+    // ---------------------等待线程池任务队列非满-------------------
+   if (!notFull_.wait_for(lock, std::chrono::seconds(1),[&]()->bool { return taskQue_.size() < (size_t)taskQueMaxThreshHode_; }))
+    {
+        std::cout << "task queue is full, submit task failed."<<std::endl;
+        auto task = std::make_shared<std::packaged_task<RType()>>([]()->RType {return RType();});
+        (*task)();
+        return task->get_future();
+    }
+
+    taskQue_.emplace([task](){(*task)();});
+    
+    notEmpty_.notify_all();
+
+    //---------------CACHED模式动态增加线程-------------------
+    if(poolMode_ == PoolMode::MODE_CACHED && taskQue_.size() > idleThreadSize_ && threads_.size() < threadSizeThreshHold_)
+    {
+        std::cout<< "create new thread..."<<std::endl;
+
+        auto ptr = std::make_unique<Thread>(std::bind(&ThreadPool::threadFunc, this, std::placeholders::_1));
+        int threadId = ptr->getId();
+        threads_.emplace(threadId,std::move(ptr));
+        threads_[threadId]->start();
+        idleThreadSize_++;
+    }
+    return result;
+}
