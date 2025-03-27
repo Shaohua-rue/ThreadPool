@@ -93,13 +93,12 @@ void ThreadPool::start(int initThreadSize)
                 }
                 else    //FIXED模式
                 {
-                    notEmpty_.wait(lock);    //等待队列不为空
+                    notEmpty_.wait(lock);    //等待队列不为空(线程休眠)
                 }
             }
             //---------------------执行线程任务-------------------
             idleThreadSize_--;   //线程池中空闲线程数减少
-            task = taskQue_.front();
-            taskQue_.pop();
+            taskQue_.deQueue(task);
             
             if(!taskQue_.empty()){
                 notEmpty_.notify_all();

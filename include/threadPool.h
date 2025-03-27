@@ -11,7 +11,7 @@
 #include <chrono>
 
 #include "thread.h"
-
+#include "safeQueue.h"
 
 
 //定义线程池模式
@@ -48,7 +48,7 @@ private:
     std::unordered_map<int, std::unique_ptr<Thread>> threads_;    //线程容器
 
     using Task = std::function<void()>;
-    std::queue<Task> taskQue_;  //任务队列
+    SafeQueue<Task> taskQue_;  //任务队列
     int taskQueMaxThreshHode_;  //任务队列上限
 
     std::mutex taskQueMtx_; //任务队列互斥锁
@@ -81,7 +81,7 @@ auto ThreadPool::submitTask(Func&& func, Args&&... args) -> std::future<decltype
         return task->get_future();
     }
 
-    taskQue_.emplace([task](){(*task)();});
+    taskQue_.enQueue([task](){(*task)();});
     
     notEmpty_.notify_all();
 
