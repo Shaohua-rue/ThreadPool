@@ -8,7 +8,7 @@
 #include <chrono>
 using namespace std;
 
-#include "threadPool.h"
+#include "threadpool.hpp"
 
 
 /*
@@ -43,11 +43,29 @@ void worker_thread(int clientfd)
 {
 
 }
+
+// Simple function that adds multiplies two numbers and returns the result
+int multiply1(const int a, const int b)
+{
+    const int res = a * b;
+    return res;
+}
+
+void  multiply2(int& out_res, const int a, const int b) {
+	out_res = a * b;
+}
+
+
 int main()
 {
+    //创建线程池
     ThreadPool pool;
+
+    //设置线程池模式
     pool.setMode(PoolMode::MODE_CACHED);
-    pool.start(8);
+
+    //开启线程池，指定其数量
+    pool.start(2);
 
     future<int> r1 = pool.submitTask(sum1, 1, 2);
     future<int> r2 = pool.submitTask(sum2, 1, 2, 3);
@@ -70,12 +88,21 @@ int main()
         return sum;
         }, 1, 100);
     //future<int> r4 = pool.submitTask(sum1, 1, 2);
+    future<int> r6 = pool.submitTask(multiply1,2,5);
+    int res = 0;
+    auto r7 = pool.submitTask(multiply2,ref(res),1,2);
+
 
     cout << r1.get() << endl;
     cout << r2.get() << endl;
     cout << r3.get() << endl;
     cout << r4.get() << endl;
     cout << r5.get() << endl;
+    cout << r6.get() << endl; 
+    r7.get(); 
+    cout << "result " << res <<endl;
+
+    pool.shutdown();
 
     getchar();
 

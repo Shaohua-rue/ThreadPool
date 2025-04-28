@@ -1,18 +1,9 @@
 cmake_minimum_required(VERSION 3.0)
-
-project(threadPool)
+project(threadpool)
 
 include_directories(
     include
 )
-
-add_library(threadPool
-    src/threadPool.cpp
-)
 add_executable(main
-    src/main.cpp
-)
-target_link_libraries(
-    main
-    threadPool
-)
+src/main.cpp)
+target_link_libraries(main pthread)
